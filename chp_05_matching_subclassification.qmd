@@ -1,0 +1,132 @@
+---
+title: "Matching and Sub-Classification"
+author: "Rahul bahadur"
+format:
+  html:
+    toc: true
+    code-fold: true
+jupyter: python3
+---
+
+
+
+```{python}
+import numpy as np 
+import pandas as pd 
+import statsmodels.api as sm 
+import statsmodels.formula.api as smf 
+from itertools import combinations 
+import plotnine as p
+
+# read data
+import ssl
+ssl._create_default_https_context = ssl._create_unverified_context
+def read_data(file): 
+    return pd.read_stata("https://raw.github.com/scunning1975/mixtape/master/" + file)
+
+
+nsw_dw = read_data('nsw_mixtape.dta')
+```
+
+
+# Bias Correction:
+
+Causal inference relies on finding the identical twin that was exposed to the treatment for the one which was not or vice-versa.
+However, that is not always possible. If the covariates are not exactly the same then matching them would lead to biases. This bias can be corrected as shown below.
+
+```{python}
+import numpy as np 
+import pandas as pd 
+import statsmodels.api as sm 
+import statsmodels.formula.api as smf 
+from itertools import combinations 
+import plotnine as p
+import ssl
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+```
+
+```{python}
+
+# read data
+ssl._create_default_https_context = ssl._create_unverified_context
+def read_data(file): 
+    return pd.read_stata("https://raw.github.com/scunning1975/mixtape/master/" + file)
+
+training_bias_reduction = read_data("training_bias_reduction.dta") 
+```
+
+```{python}
+training_bias_reduction
+
+```
+
+## Steps for Bias correction
+    1. Find the closest matching unit with the treatment unit based on the covariate (IV). For eg. for `Unit` 1 with X=11, the matching un-treated unit is X=10, i.e. `Unit` 5. Similarly for others
+
+```{python}
+training_bias_reduction['Y1'] = np.where(training_bias_reduction.D==1, training_bias_reduction.Y, 0)
+training_bias_reduction['Y0'] = np.where(training_bias_reduction.D==0, training_bias_reduction.Y, 0)
+```
+
+    2. Create a column with the fitted data using a model for `Y ~ X`
+```{python}
+
+fitted_model = sm.OLS.from_formula('Y ~ X', training_bias_reduction).fit()
+training_bias_reduction['fitted'] =  fitted_model.predict(training_bias_reduction.X)
+training_bias_reduction
+```
+
+
+| Bias := it is the diff in the predicted values generated based on the covariates.` implying that, given the same model, and the same set of covariates, and no information on which units
+are treated or not, the model should generate fitted values consistent with these assumptions.
+
+
+Bias reduction method :=
+It is the diff between the diff of `Treated` and `Un-Treated` covariate and the diff between `Treated` predicted value and `un_treated` predicted value
+
+```{python}
+ATT = np.mean((np.array(training_bias_reduction['Y'][training_bias_reduction.D==1]) - np.array(training_bias_reduction['Y'][training_bias_reduction.D==0])) -
+ (np.array(training_bias_reduction['fitted'][training_bias_reduction.D==1]) - np.array(training_bias_reduction['fitted'][training_bias_reduction.D==0])))
+
+print(ATT)
+```
+
+## Computing the variance of the bias estimator
+
+$$
+\sigma^2_{ATT} = \frac{1}{N_T} \sum_{D_i=1}(Y_i - \frac{1}{M} \sum_{M_i=1}^{M} {Y_{j_{(m)}i} - \hat{\delta}_{ATT}})^2
+$$
+
+
+```{python}
+var_att = (((np.array(training_bias_reduction.Y[training_bias_reduction.D==1]) - np.array(training_bias_reduction.Y[training_bias_reduction.D==0]) - ATT)) **2).mean()
+var_att, np.sqrt(var_att)
+```
+
+# The NSW Program
+
+```{python}
+# read data
+
+ssl._create_default_https_context = ssl._create_unverified_context
+def read_data(file): 
+    return pd.read_stata("https://raw.github.com/scunning1975/mixtape/master/" + file)
+
+
+nsw_dw = read_data('nsw_mixtape.dta')
+nsw_dw
+```
+
+## Some exploratory analysis for re78
+```{python}
+sns.hist
+```
+
+```{python}
+mean1 = nsw_dw[nsw_dw.treat==1].re78.mean()
+mean0 = nsw_dw[nsw_dw.treat==0].re78.mean()
+ate = np.unique(mean1 - mean0)[0]
+print("The experimental ATE estimate is {:.2f}".format(ate))
+```
