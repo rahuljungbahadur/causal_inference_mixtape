@@ -256,6 +256,8 @@ nsw_dw_cpscontrol.groupby('treat')['pscore'].quantile([0.05, 0.1, 0.25,0.5,0.75,
 
 Was not able to replicate what the mixtape book shows. Trying to replicate it using the NSW data provided by the `MatchIt` library in `R`.
 
+## Comnparing with R data
+
 ```{r}
 library(tidyverse)
 library(MatchIt)
@@ -293,19 +295,50 @@ lalonde_df['treat2'] = lalonde_df.treat.astype(str)
 ```
  So, all control units are coming from PSID and all treated units are from NSW
 
-
+```{python}
+lalonde_df['u74'], lalonde_df['u75'] = 0, 0
+lalonde_df.loc[lalonde_df.re74==0, 'u74'] = 1
+lalonde_df.loc[lalonde_df.re75==0, 'u75'] = 1
+```
 
 ```{python}
-
+model_lalonde = smf.glm(formula="""treat ~ age + I(age**2) + I(age**3) + educ + I(educ**2) + 
+                    married + nodegree + race + re74 + re75+ u74 + u75 + educ*re74""", 
+                    family=sm.families.Binomial(),
+                   data=lalonde_df).fit()
 ```
+
+```{python}
+model_lalonde.summary()
+```
+
+### Computing propensity scores
+
+```{python}
+lalonde_df['propensity'] = model_lalonde.predict(lalonde_df)
+```
+
+```{python}
+lalonde_df.groupby('treat')['propensity'].quantile([0.05,0.10,0.25,0.50,0.75,0.95,0.99])
+
+(p.ggplot(lalonde_df, p.aes(x='propensity', fill='treat2')) + p.geom_histogram(alpha=0.5) + p.facet_wrap('~treat2'))
+(p.ggplot(lalonde_df, p.aes(x='propensity', fill='treat2')) + p.geom_density(alpha=0.5) + p.facet_wrap('~treat2'))
+```
+
+### Conclusion:
+
+This works a lot better than the data shown in the book
  
 # Weighing on propensity score
 
-
 Basically, the propensity score calcluated in the previous step can be used to 'weight' each unit. 
+
+
 $$
 \hat{\delta}_{ATE} = \frac{1}{N} \sum_{i=1}^N Y_i . \frac{D_i - \hat{p}(X_i)}{\hat{p}(X_i). (1-\hat{p}(X_i))}
 $$
+
+
 
 ```{python}
 
