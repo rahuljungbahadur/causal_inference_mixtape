@@ -121,12 +121,193 @@ nsw_dw
 
 ## Some exploratory analysis for re78
 ```{python}
-sns.hist
+nsw_dw['treat2'] = nsw_dw.treat.astype(str)
+(p.ggplot(nsw_dw, p.aes(x='re78', fill = 'treat2')) + p.geom_histogram(alpha=0.8, position='dodge2'))
 ```
 
 ```{python}
 mean1 = nsw_dw[nsw_dw.treat==1].re78.mean()
 mean0 = nsw_dw[nsw_dw.treat==0].re78.mean()
-ate = np.unique(mean1 - mean0)[0]
+ate = mean1 - mean0
 print("The experimental ATE estimate is {:.2f}".format(ate))
+```
+
+## Read in CPS data
+
+This data will act as counterfactual. Of course, it cannot serve as the exact counterfactual
+ of the nsw program people as CPS is random americans (no treatment) whereas NSW are the distressed people who
+were considered as candidates for the program.
+
+```{python}
+ssl._create_default_https_context = ssl._create_unverified_context
+def read_data(file): 
+    return pd.read_stata("https://raw.github.com/scunning1975/mixtape/master/" + file)
+
+
+# Prepare data for logit 
+nsw_dw_cpscontrol = read_data('cps_mixtape.dta')
+
+nsw_dw_cpscontrol
+
+```
+
+Concatenating both datasets
+```{python}
+nsw_dw_cpscontrol['treat2'] = nsw_dw_cpscontrol.treat.astype(float).astype(str)
+
+nsw_all = pd.concat([nsw_dw, nsw_dw_cpscontrol], axis=0)
+nsw_all
+```
+
+## Diff in distribution of the 2 groups
+```{python}
+(p.ggplot(nsw_all, p.aes(x='age')) + p.geom_density(alpha=0.5) +
+ p.facet_wrap('~treat2 + data_id'))
+
+```
+
+As seen in the plot, the distribution of the non-treated group between the 2 studies is very different.
+
+Next step would be to find the propensity of the people in the `CPS` study to lie in the `NSW` study
+
+Since the data for `re74` and `re75` are 0.0 where no observation was recorded, we would need to create another variable indicating that
+the values are missing and should not be interpreted as `0.0`
+```{python}
+nsw_all['u74'], nsw_all['u75'] = 0, 0
+nsw_all.loc[nsw_all.re74==0, 'u74'] = 1
+nsw_all.loc[nsw_all.re75==0, 'u75'] = 1
+```
+
+```{python}
+model = smf.glm(formula="""treat ~ age + I(age**2) + I(age**3) + educ + I(educ**2) + 
+                    marr + nodegree + black + hisp + re74 + re75+ u74 + u75 + educ*re74""", 
+                    family=sm.families.Binomial(),
+                   data=nsw_all).fit()
+```
+
+```{python}
+model.summary()
+```
+
+```{python}
+propensity = model.predict(nsw_all)
+nsw_all['propensity'] = propensity
+nsw_all[['treat', 'propensity']]
+```
+
+## Plot the dist of the propensities
+```{python}
+(p.ggplot(nsw_all, p.aes(x='propensity')) +
+ p.geom_density(alpha=0.4) + 
+ p.facet_wrap('~ treat', scales='free'))
+
+```
+
+```{python}
+nsw_all.groupby('treat')['propensity'].quantile([0.05, 0.1, 0.25,0.5,0.75, 0.95, 0.99])
+```
+
+```{python}
+
+import numpy as np 
+import pandas as pd 
+import statsmodels.api as sm 
+import statsmodels.formula.api as smf 
+from itertools import combinations 
+import plotnine as p
+
+# read data
+import ssl
+ssl._create_default_https_context = ssl._create_unverified_context
+def read_data(file): 
+    return pd.read_stata("https://raw.github.com/scunning1975/mixtape/master/" + file)
+
+
+# Prepare data for logit 
+nsw_dw_cpscontrol = read_data('cps_mixtape.dta')
+
+nsw_dw_cpscontrol = pd.concat((nsw_dw_cpscontrol, nsw_dw))
+nsw_dw_cpscontrol['u74'], nsw_dw_cpscontrol['u75'] = 0, 0
+nsw_dw_cpscontrol.loc[nsw_dw_cpscontrol.re74==0, 'u74'] = 1
+nsw_dw_cpscontrol.loc[nsw_dw_cpscontrol.re75==0, 'u75'] = 1
+# estimating propensity score
+logit_nsw = smf.glm(formula="""treat ~ age + I(age**2) + I(age**3) + educ + I(educ**2) + 
+                    marr + nodegree + black + hisp + re74 + re75 + u74 + u75 + educ*re74""", 
+                    family=sm.families.Binomial(),
+                   data=nsw_dw_cpscontrol).fit()
+                  
+nsw_dw_cpscontrol['pscore'] = logit_nsw.predict(nsw_dw_cpscontrol)
+
+nsw_dw_cpscontrol.groupby('treat')['pscore'].mean()
+
+p.ggplot(nsw_dw_cpscontrol, p.aes(x='pscore')) +    p.geom_histogram(bins=50) +    p.facet_wrap("treat", scales='free')
+```
+
+```{python}
+nsw_dw_cpscontrol.shape
+```
+
+```{python}
+
+nsw_dw_cpscontrol.groupby('treat')['pscore'].quantile([0.05, 0.1, 0.25,0.5,0.75, 0.95, 0.99])
+```
+
+### Conclusion:
+
+Was not able to replicate what the mixtape book shows. Trying to replicate it using the NSW data provided by the `MatchIt` library in `R`.
+
+```{r}
+library(tidyverse)
+library(MatchIt)
+library(reticulate)
+```
+
+
+```{r}
+lalonde_dataset <- MatchIt::lalonde
+head(lalonde_dataset)
+tail(lalonde_dataset)
+nrow(lalonde_dataset)
+write_csv(lalonde_dataset %>% tibble::rownames_to_column('study_name'), 'lalonde_dataset.csv')
+```
+
+```{python}
+lalonde_df = pd.read_csv("lalonde_dataset.csv")
+lalonde_df.head()
+
+lalonde_df[~lalonde_df.study_name.str.contains('NSW')].shape
+```
+
+```{python}
+lalonde_df.study_name.sample()
+```
+
+```{python}
+lalonde_df['study_name'] = lalonde_df.study_name.str.extract('([A-Z]+)')
+lalonde_df.head(10)
+lalonde_df['treat2'] = lalonde_df.treat.astype(str)
+```
+
+```{python}
+(p.ggplot(lalonde_df, p.aes(x='re74', fill='treat2')) + p.geom_histogram(position='dodge', alpha=0.5) + p.facet_wrap('~study_name'))
+```
+ So, all control units are coming from PSID and all treated units are from NSW
+
+
+
+```{python}
+
+```
+ 
+# Weighing on propensity score
+
+
+Basically, the propensity score calcluated in the previous step can be used to 'weight' each unit. 
+$$
+\hat{\delta}_{ATE} = \frac{1}{N} \sum_{i=1}^N Y_i . \frac{D_i - \hat{p}(X_i)}{\hat{p}(X_i). (1-\hat{p}(X_i))}
+$$
+
+```{python}
+
+
 ```
