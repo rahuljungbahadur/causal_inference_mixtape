@@ -333,14 +333,50 @@ This works a lot better than the data shown in the book
 
 Basically, the propensity score calcluated in the previous step can be used to 'weight' each unit. 
 
+## Non-normalized treatment effect
 
 $$
 \hat{\delta}_{ATE} = \frac{1}{N} \sum_{i=1}^N Y_i . \frac{D_i - \hat{p}(X_i)}{\hat{p}(X_i). (1-\hat{p}(X_i))}
 $$
 
 
+```{python}
+lalonde_df['weighted_Y'] = lalonde_df.re74 * (lalonde_df.treat - lalonde_df.propensity)/(lalonde_df.propensity - (1-lalonde_df.propensity))
+
+```
 
 ```{python}
+lalonde_df_ATE = lalonde_df.weighted_Y.mean()
+print("Treatment Effect (non-normalized, all data): {:.2f}".format(lalonde_df_ATE))
+```
+
+## Normalized treatment effect
+
+Basically divide each of the units of Y by sum of 
+
+```{python}
+sum_propensity_d0 = lalonde_df[lalonde_df.treat==0]['propensity'].sum()
+sum_propensity_d1 = lalonde_df[lalonde_df.treat==1]['propensity'].sum()
 
 
+print(f"sum_propensity_d0 {sum_propensity_d0}, sum_propensity_d1{sum_propensity_d1}")
+```
+
+### Adjusted weights
+```{python}
+lalonde_df.shape[0]
+```
+```{python}
+D1 = np.sum(lalonde_df[lalonde_df.treat==1].weighted_Y * (lalonde_df.shape[0]/sum_propensity_d1))
+D2 = np.sum(lalonde_df[lalonde_df.treat==0].weighted_Y * (lalonde_df.shape[0]/sum_propensity_d0))
+
+D1 - D2
+```
+
+```{python}
+import dowhy as dy
+```
+
+```{python}
+dy.
 ```
